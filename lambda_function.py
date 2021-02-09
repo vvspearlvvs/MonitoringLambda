@@ -10,47 +10,34 @@ import time
 import datetime
 import logging
 
-print("lambda test log")
-
 CUSTOMER = os.environ['CUSTOMER']
-TOKEN = os.environ['TOKEN'] #bot token
-UID = os.environ['UID'] #channel name
-
+TOKEN = os.environ['TOKEN']
+UID = os.environ['UID']
 
 def Send_Telegram(TOKEN, UID, MSG):
-    ## 이벤트로 받은 메세지 파싱
-    params = {'token':TOKEN, 'channel': UID, 'text':MSG}
+    params = {'chat_id':UID, 'text':MSG, 'disable_web_page_preview':False}
     params = urllib.parse.urlencode(params)
     headers = {"Content-type": "application/x-www-form-urlencoded"}
+    conn = http.client.HTTPSConnection("api.telegram.org")
 
-    conn = http.client.HTTPSConnection("slack.com")
-
-    conn.request("POST", "/api/chat.postMessage", params, headers) #mainiam
+    conn.request("POST", "/bot"+TOKEN+"/sendMessage", params, headers) #mainiam
 
     response = conn.getresponse()
     data = response.read()
     data = json.loads(data)
 
-    print("###### url response #######")
-    print(data)
-
     conn.close()
-    #message_id = data['result']['message_id']
-    #return message_id
+    message_id = data['result']['message_id']
+    return message_id
 
 
-def sendImage(TOKEN, UID, MSG, PATH):
-    ## 파일이름 : PATH
+def sendImage(TOKEN, UID, MSG, PATH, MESSAGE_ID):
 
-    url = "https://slack.com/api/files.upload";
-
-    slack_params = {
-            "filename":"title.png",
-            "token":TOKEN,
-            "channels":['#cw_slack_test']
-        }
-
-    r=requests.post(url, params=slack_params, files=PATH)
+    url = "https://api.telegram.org/bot"+TOKEN+"/sendPhoto";
+    files = {'photo': open(PATH, 'rb')}
+    data = {'chat_id' : UID, 'disable_notification': True, 'reply_to_message_id': MESSAGE_ID}
+    #r= requests.post(url, files=PATH, data=data)
+    r= requests.post(url, files=files, data=data)
 
     print(r.status_code, r.reason, r.content)
 
@@ -78,21 +65,20 @@ def MakeGraph(Title, Namespace, RegionCode, MetricName, Statistic, Dimensions):
         metric['metrics'][0].append(d['name'])
         metric['metrics'][0].append(d['value'])
 
+    #stat = { "stat": Statistic }
+    #metric['metrics'][0].append(stat)
+
     metric=json.dumps(metric)
     response = cw.get_metric_widget_image(MetricWidget=metric, OutputFormat='png')
-    png = response['MetricWidgetImage']
+    png = response['MetricWidgetImage'] #type : bytes\
 
-    # ver1. dict형식으로 return
-    imgfile = {'file': png}
-    return imgfile
-
-    # ver2. 내부디렉토리에 png저장한 상태로 return
-    '''
     saveimg = open('/tmp/'+Title+'.png', 'wb')
     saveimg.write(png)
     saveimg.close()
     return "/tmp/"+Title+".png"
-    '''
+
+    #imgfile = {'photo': png}
+    #return imgfile
 
 def lambda_handler(event, context):
 
@@ -144,9 +130,7 @@ def lambda_handler(event, context):
 
         MSG = "["+NewStateEmoji+" "+CUSTOMER+"]\n알람명: "+AlarmName+"\n변경상태: "+OldStateEmoji+" > "+NewStateEmoji+"\n상태변경 시간: "+StateChangeTime+" (한국시간)\n타겟: "+Target+"\n리전: "+Region+"\n알람상세: "+NewStateReason
 
-        Send_Telegram(TOKEN, UID, MSG)
-
+        message_id = Send_Telegram(TOKEN, UID, MSG)
         GRAPH = MakeGraph(AlarmName, Namespace, RegionCode, MetricName, Statistic, Dimensions)
-        sendImage(TOKEN, UID, MSG, GRAPH)
-        # ver2. 내부디렉토리에 png저장한 상태 제거
-        #os.remove(GRAPH)
+        sendImage(TOKEN, UID, MSG, GRAPH, message_id)
+        os.remove(GRAPH)
